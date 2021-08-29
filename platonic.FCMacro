@@ -1,0 +1,141 @@
+# -*- coding: utf-8 -*-
+
+import FreeCAD
+import Mesh, MeshPart
+import math
+
+Phi = (1+math.sqrt(5))/2
+
+class GenericPlatonic:
+
+    def __init__(self, doc, L = 10, R = 1) -> None:
+        self.L = L
+        self.R = R
+        self.doc = doc
+        self.pts = []
+
+    def name(self):
+        return type(self).__name__
+
+    def generate(self, makeMesh = False):
+        self.generateVertices()
+
+        spheres = []
+        for idx,p in enumerate(self.pts):
+            so = self.doc.addObject("Part::Sphere", f"s{idx}")
+            so.Placement.Base = p
+            so.Radius = self.R
+            spheres.append(so)
+
+        cyls = []
+        for i in range(0,len(self.pts)):
+            for j in range(i+1,len(self.pts)):
+                v1 = self.pts[i]
+                v2 = self.pts[j]
+                if self.isConnected(v1, v2):
+                    cyl = self.doc.addObject("Part::Feature", f"cyl{i}_{j}")
+                    vec = v2.sub(v1)
+                    cyl.Shape = Part.makeCylinder(self.R, vec.Length, v1, vec)
+                    cyls.append(cyl)
+
+        all = self.doc.addObject("Part::MultiFuse",self.name())
+        all.Shapes = spheres + cyls
+        self.doc.recompute()
+
+        if makeMesh:
+            mesh = self.doc.addObject("Mesh::Feature", self.name()+"Mesh")
+            mesh.Mesh = MeshPart.meshFromShape(Shape=all.Shape, LinearDeflection=0.01, AngularDeflection=0.523599, Relative=False)
+            self.doc.recompute()
+
+def axisSymmetry(vs):
+    def gen(val):
+        if val == 0:
+            return [1]
+        else:
+            return [-1, 1]
+
+    result = []
+    for v in vs:
+        for i in gen(v.x):
+            for j in gen(v.y):
+                for k in gen(v.z):
+                    result.append(FreeCAD.Vector(v.x*i, v.y*j, v.z*k))
+    return result
+
+class Cube(GenericPlatonic):
+    def generateVertices(self):
+        pts = [
+            FreeCAD.Vector(1,1,1),
+        ]
+        pts = axisSymmetry(pts)
+        self.pts = list(map(lambda v: v*self.L, pts))
+
+    def isConnected(self, v1,v2):
+        return v1.sub(v2).Length <= 2*self.L + 0.05
+
+class Tetrahedron(GenericPlatonic):
+    def generateVertices(self):
+        pts = [
+            FreeCAD.Vector(1,1,1),
+            FreeCAD.Vector(1,-1,-1),
+            FreeCAD.Vector(-1,1,-1),
+            FreeCAD.Vector(-1,-1,1)
+        ]
+        self.LL = pts[0].sub(pts[1]).Length * self.L
+        self.pts = list(map(lambda v: v*self.L, pts))
+
+    def isConnected(self, v1,v2):
+        # LL = 2*math.sqrt(2)*self.L
+        return v1.sub(v2).Length <= self.LL + 0.05
+
+class Octahedron(GenericPlatonic):
+    def generateVertices(self):
+        pts = [
+            FreeCAD.Vector(1,0,0),
+            FreeCAD.Vector(0,1,0),
+            FreeCAD.Vector(0,0,1),
+        ]
+        self.LL = pts[0].sub(pts[1]).Length * self.L
+        pts = axisSymmetry(pts)
+        self.pts = list(map(lambda v: v*self.L, pts))
+
+    def isConnected(self, v1,v2):
+        # LL = math.sqrt(2)*self.L
+        return v1.sub(v2).Length <= self.LL + 0.05
+
+class Icosahedron(GenericPlatonic):
+    def generateVertices(self):
+        pts = [
+            FreeCAD.Vector(0,1,Phi),
+            FreeCAD.Vector(1,Phi,0),
+            FreeCAD.Vector(Phi,0,1),
+        ]
+        self.LL = pts[0].sub(pts[1]).Length * self.L
+        pts = axisSymmetry(pts)
+        self.pts = list(map(lambda v: v*self.L, pts))
+
+    def isConnected(self, v1,v2):
+        return v1.sub(v2).Length <= self.LL + 0.05
+
+class Dodecahedron(GenericPlatonic):
+    def generateVertices(self):
+        pts = [
+            FreeCAD.Vector(1,1,1),
+            FreeCAD.Vector(0,1/Phi,Phi),
+            FreeCAD.Vector(1/Phi,Phi,0),
+            FreeCAD.Vector(Phi,0,1/Phi),
+        ]
+        self.LL = pts[0].sub(pts[1]).Length * self.L
+        pts = axisSymmetry(pts)
+        self.pts = list(map(lambda v: v*self.L, pts))
+
+    def isConnected(self, v1,v2):
+        return v1.sub(v2).Length <= self.LL + 0.05
+
+doc = App.getDocument('scripted')
+
+Cube(doc, 20).generate()
+Tetrahedron(doc, 20).generate()
+Octahedron(doc, 20).generate()
+# Icosahedron(doc, 20).generate()
+# Dodecahedron(doc, 20).generate()
